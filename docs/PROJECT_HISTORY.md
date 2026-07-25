@@ -18,7 +18,7 @@
 
 ## 阶段计划
 
-P0 重构(✅) → P1 基础设施(✅) → P2 简单门控 sheet(✅) → **P3 大 sheet（下一步）** → P4 收尾
+P0 重构(✅) → P1 基础设施(✅) → P2 简单门控 sheet(✅) → P3 大 sheet(✅) → **P4 收尾（✅ P4b/P4c 完成，P4a 不可行）**
 
 ---
 
@@ -64,22 +64,55 @@ SFTP Server SSH Keys、Virtual roots、Routing rules。
 
 ---
 
-## 🔜 P3（下一步）：大 sheet
+## ✅ P3（已完成 2026-07-25）：大 sheet
 
-跨 sheet 计算名内联在 P2 已可用，所以主要工作是 **补每个 sheet 的输入字段 + SheetSpec**：
+outputs 101 → **752**，fields → **92**，22 个测试通过；重传 v63 = data-only 0/0/0；typecheck 全绿。
+新增导入 6 个 sheet，分两个子阶段：
 
-- **FTP Client(118) / SFTP Client(129)**：有 profile1/profile2 + Test 列（D/E），大量 `ClientFTP*` / `ClientSFTP*` 输入定义名
-- **AS2(191)**：4 个消息类型块（D13/74/135/196）
-- **Mailboxes(240)**：D5/D14 已内联，其余含嵌套 PartnerType→CUSTOMERS/PARTNERS/INTERNALS/UTIL
-- **User accounts(15)**：col D
-- **Identities(9)**：唯一的活 VLOOKUP（C1），需要 `cellRefs B1→orgNameType`
-- **HTTP(S) Client profiles(32)**、**Certificates(rows 25)**
+- **P3.1**（User accounts、Identities、AS2、Mailboxes）：只需给编译器加 `CHAR()` + 给
+  `SheetSpec` 加“每列独立 label 列”（`labelColsByCol`，Mailboxes 的 I 列 label 在 H 列）。
+- **P3.2**（HTTP(S) / FTP / SFTP Client）：需要给引擎加新原语。
 
-可用 `apps/api/src/xltm/_dump.ts` 模式先 dump 公式再写。
+**编译器新支持**（`formula/parser.ts` + `tokenizer.ts`）：`CHAR` / `LEFT` / `LEN` / `FIND` /
+`REPLACE` / 算术 `+` `-` / 数字比较 `>`；tokenizer 现在也识别 `-`；`IFERROR(FIND(...),0)`
+把第二参数当 FIND 的 fallback（和 lookup 一样）。
 
-## 🔜 P4（收尾）
+**引擎新增**（`types.ts` / `expr.ts` / `schema.ts`）：Expr 种类 `find`/`replace`/`left`/`len`/
+`arith(+/-)`，Cond 种类 `gt`。⚠️ 新种类**必须**同时加到 `schema.ts` 的 zod union 和
+`collectLookupTables` walker，否则 import 路由会报 "Compiled ruleset is invalid"（seed 路径不走 zod，
+import 路径走 zod 校验）。
 
-Master data 作为字段来源、Source ID lookup、ITX/SI 紧凑命名。
+**字段**（`rulesets/dsv-edi.ts`）：新增 Identities（orgNameType 下拉、partnerName3PP）、AS2
+（aS2VANSPartner、aS2MessageType1-4、trustedDigitalCertificate[/Test]）、Mailboxes（batch/delay
+MailboxMessageType1-4）、以及 `clientFields[]`（~40 个 HTTP/FTP/SFTP 输入，用 `txt()`/`bln()` 生成）。
+字段 key = `lowerFirst(定义名)`，会出现 aS2VANSPartner、clientHTTPUseSSL 这种略丑但必须一致的写法。
+
+**已核对的名字**：User acct `cus.acme`；Identities `ACME - Direct`；AS2 `ACME_TRUECOMMERCE_ORDERS_AS2`；
+Mailbox `/DSV_ACCOUNTS_mb/DSV_CUSTOMERS_mb/DSV_cus.acme_mb`；HTTP
+`DSV_user_at_acme.com_edi.acme.com_443_SSL_http`（`@→_at_` 靠 FIND/REPLACE）；SFTP profile
+`DSV_SSH_svc_at_acme.com_..._pf`（LEFT/LEN 截断到 64）。
+
+**跳过**：Certificates 全是静态模板文字（没有公式单元格）；FTP/SFTP 的 A/B“Rename Profile”行未导入
+（D 列 ProfileName 已覆盖），HTTP 的 A36/B36 重命名行有导入（是不同的 `_pf` 名字）。
+
+## � P4（收尾）
+
+- **P4b Source ID lookup（✅ 已完成 2026-07-25）**：导入 "Source ID lookup" sheet 的 C2/C3
+  公式（`CONCATENATE(ResolvedPartnerId,"_",E3)`，E3=常量 "DSV"）。新增字段
+  `sourceIdDestinationId`（默认 "DSV"）。Sender/Receiver Code = `伙伴ID_DSV`。
+  active=754 outputs / 93 fields，重传 v63 = data-only 0/0/0，22 个单测通过。
+- **P4a Master data 动态字段（⛔ 不可行 / 跳过）**：`Map1*`/`Map2*`/`CodeList*` 等定义名在工作簿里是
+  `#REF!`（宏运行时重建，静态读不到）。现有手写的单映射字段已覆盖需求。
+- **P4c ITX / SI 紧凑 map 名（✅ 已完成 2026-07-25，从 VBA 宏还原）**：这几行不是单元格公式——宏在运行时
+  **把 Excel 公式写进** "Resource and file naming" 的 B/C 单元格。做法：解出 `xl/vbaProject.bin`
+  （CFB/OLE 解析 + MS-OVBA 解压），读到宏写入的公式，逐字转成引擎表达式。
+  新增引擎原语 `right`/`rept`/`join`（= TEXTJOIN skipBlank），新增 5 个字段（Direction、System、
+  Difference Character、Split Map、FNX Functionality），并在导入器里用 `mapNameOutputs()` 工厂
+  接上真实的 `MessageTypeLookup#2` + `DSVSystemITXLookup#2` 追加两个输出。
+  active=756 outputs / 98 fields，重传 v63 = data-only 0/0/0，26 个单测通过。
+  **两个真实样本精确复现**：`D_TX_CE_ROMDLZxCSRV1xxINRD96AOR` 与
+  `DSV_TR_A2A_CAENRCANON_940_4010_824_4010_OUT_RP_mp`；服务端实测
+  `ORDERS/INVOIC → D_TX_CE_ROMDLZxORDV1xxFIVD96AOR`。
 
 ---
 
@@ -93,7 +126,7 @@ Master data 作为字段来源、Source ID lookup、ITX/SI 紧凑命名。
 ## 验证命令
 
 ```powershell
-npm test            # naming-engine 单元测试（17 通过）
+npm test            # naming-engine 单元测试（26 通过）
 npm run typecheck   # 所有 workspace 全绿
 # 重传 v63 应为 data-only 0/0/0：
 curl.exe -s -F "file=@AAAAXXXXXXX - DSV EDI Naming Tool v63.xltm" -F "note=x" http://localhost:8787/api/versions/import-xltm

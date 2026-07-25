@@ -24,6 +24,29 @@ export const lookup = (table: string, key: Expr, fallback?: Expr): Expr => ({
   ...(fallback !== undefined ? { fallback } : {}),
 });
 
+export const left = (text: Expr, count: Expr): Expr => ({ kind: "left", text, count });
+
+export const right = (text: Expr, count: Expr): Expr => ({ kind: "right", text, count });
+
+export const rept = (text: Expr, count: Expr): Expr => ({ kind: "rept", text, count });
+
+export const len = (value: Expr): Expr => ({ kind: "len", value });
+
+export const arith = (op: "+" | "-", l: Expr, r: Expr): Expr => ({
+  kind: "arith",
+  op,
+  left: l,
+  right: r,
+});
+
+/** Excel TEXTJOIN(delim, skipBlank, ...parts). */
+export const join = (delim: string, skipBlank: boolean, ...parts: Expr[]): Expr => ({
+  kind: "join",
+  delim,
+  skipBlank,
+  parts,
+});
+
 export const isBlank = (key: string): Cond => ({ kind: "isBlank", key });
 
 export const notBlank = (key: string): Cond => ({ kind: "notBlank", key });
@@ -31,6 +54,8 @@ export const notBlank = (key: string): Cond => ({ kind: "notBlank", key });
 export const eq = (left: Expr, right: Expr): Cond => ({ kind: "eq", left, right });
 
 export const neq = (left: Expr, right: Expr): Cond => ({ kind: "neq", left, right });
+
+export const gt = (left: Expr, right: Expr): Cond => ({ kind: "gt", left, right });
 
 export const and = (...parts: Cond[]): Cond => ({ kind: "and", parts });
 

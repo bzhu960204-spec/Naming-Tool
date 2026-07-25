@@ -1,14 +1,23 @@
 import {
   and,
+  arith,
   concat,
   eq,
+  gt,
   iff,
   isBlank,
+  join,
+  left,
+  len,
+  lookup,
+  notBlank,
   or,
+  rept,
+  right,
   upper,
   v,
 } from "../builders.js";
-import type { Expr, OutputDef, Ruleset } from "../types.js";
+import type { Expr, Field, OutputDef, Ruleset } from "../types.js";
 
 /**
  * DSV EDI naming ruleset — reverse-engineered from
@@ -56,6 +65,71 @@ const lwFwOutputs: OutputDef[] = lwFwFiles.map((f) => ({
   category: "Lightwell Framework exports",
   expr: exportFile(f.suffix),
 }));
+
+/** Compact helpers for the many HTTP/FTP/SFTP client-profile input fields. */
+const txt = (key: string, label: string, group: string): Field => ({
+  key,
+  label,
+  type: "text",
+  group,
+});
+const bln = (key: string, label: string, group: string): Field => ({
+  key,
+  label,
+  type: "boolean",
+  group,
+  default: "false",
+});
+
+/** Inputs for the HTTP(S) / FTP / SFTP client-profile worksheets. */
+const clientFields: Field[] = [
+  // HTTP(S) Client profiles
+  bln("clientHTTPUseSSL", "HTTP: Use SSL?", "HTTP Client"),
+  txt("clientHTTPProdDNSOrIP", "HTTP: Server DNS or IP (Prod)", "HTTP Client"),
+  txt("clientHTTPProdPortNumber", "HTTP: Port number (Prod)", "HTTP Client"),
+  txt("clientHTTPProdLoginName", "HTTP: Login name (Prod)", "HTTP Client"),
+  txt("clientHTTPTestDNSOrIP", "HTTP: Server DNS or IP (Test)", "HTTP Client"),
+  txt("clientHTTPTestPortNumber", "HTTP: Port number (Test)", "HTTP Client"),
+  txt("clientHTTPTestLoginName", "HTTP: Login name (Test)", "HTTP Client"),
+  txt("clientHTTPCACertDescription", "HTTP: CA certificate description", "HTTP Client"),
+  bln("clientHTTPClientCertAuthUsed", "HTTP: Client certificate auth used?", "HTTP Client"),
+  bln("clientHTTPLoginRequired", "HTTP: Username login required?", "HTTP Client"),
+
+  // FTP Client
+  txt("clientFTPLoginName", "FTP: Login name (Prod)", "FTP Client"),
+  txt("clientFTPLoginNameTest", "FTP: Login name (Test)", "FTP Client"),
+  txt("clientFTPDNSOrIP", "FTP: Server DNS or IP (Prod)", "FTP Client"),
+  txt("clientFTPDNSOrIPTest", "FTP: Server DNS or IP (Test)", "FTP Client"),
+  txt("clientFTPPort", "FTP: Port (Prod)", "FTP Client"),
+  txt("clientFTPPortTest", "FTP: Port (Test)", "FTP Client"),
+  txt("clientFTPPassword", "FTP: Password (Prod)", "FTP Client"),
+  txt("clientFTPPasswordTest", "FTP: Password (Test)", "FTP Client"),
+  txt("clientFTPMessageType1", "FTP: Message type (profile 1)", "FTP Client"),
+  txt("clientFTPMessageType2", "FTP: Message type (profile 2)", "FTP Client"),
+  txt("clientFTPBPVersion1", "FTP: BP version (profile 1)", "FTP Client"),
+  txt("clientFTPBPVersion2", "FTP: BP version (profile 2)", "FTP Client"),
+  txt("fTPGETVersion1", "FTP: GET rule version (profile 1)", "FTP Client"),
+
+  // SFTP Client
+  bln("isProtocolSFTP", "SFTP: Protocol is SFTP?", "SFTP Client"),
+  txt("clientSFTPPartnerInCamelNotation", "SFTP: Partner in CamelNotation", "SFTP Client"),
+  txt("clientFTPPartnerInCamelNotation", "SFTP: Partner in CamelNotation (legacy)", "SFTP Client"),
+  txt("clientSFTPLoginName", "SFTP: Login name (Prod)", "SFTP Client"),
+  txt("clientSFTPLoginNameTest", "SFTP: Login name (Test)", "SFTP Client"),
+  txt("clientSFTPDNSOrIP", "SFTP: Server DNS or IP (Prod)", "SFTP Client"),
+  txt("clientSFTPDNSOrIPTest", "SFTP: Server DNS or IP (Test)", "SFTP Client"),
+  txt("clientSFTPPort", "SFTP: Port (Prod)", "SFTP Client"),
+  txt("clientSFTPPortTest", "SFTP: Port (Test)", "SFTP Client"),
+  txt("clientSFTPPassword", "SFTP: Password (Prod)", "SFTP Client"),
+  txt("clientSFTPPasswordTest", "SFTP: Password (Test)", "SFTP Client"),
+  txt("clientSFTPMessageType1", "SFTP: Message type (profile 1)", "SFTP Client"),
+  txt("clientSFTPMessageType2", "SFTP: Message type (profile 2)", "SFTP Client"),
+  txt("clientSFTPBPVersion1", "SFTP: BP version (profile 1)", "SFTP Client"),
+  txt("clientSFTPBPVersion2", "SFTP: BP version (profile 2)", "SFTP Client"),
+  txt("clientSFTPServerInsideDSVNetwork1", "SFTP: Server inside DSV network? (profile 1)", "SFTP Client"),
+  txt("clientSFTPServerInsideDSVNetwork2", "SFTP: Server inside DSV network? (profile 2)", "SFTP Client"),
+];
+
 
 export const dsvEdiRuleset: Ruleset = {
   id: "dsv-edi-naming",
@@ -172,6 +246,53 @@ export const dsvEdiRuleset: Ruleset = {
       type: "text",
       group: "Map",
       placeholder: "V5",
+    },
+    {
+      key: "mapDirection",
+      label: "Direction",
+      type: "select",
+      group: "Map",
+      options: [
+        { value: "IN", label: "IN" },
+        { value: "OUT", label: "OUT" },
+      ],
+      help: "Mandatory for map names. ITX uses the first letter (I/O).",
+    },
+    {
+      key: "mapSystem",
+      label: "System",
+      type: "text",
+      group: "Map",
+      placeholder: "RP",
+      help: 'ITX names use the 1-char code from DSVSystemITXLookup ("Z" if unknown/blank).',
+    },
+    {
+      key: "differenceChar",
+      label: "Difference Character",
+      type: "text",
+      group: "Map",
+      help: "Optional trailing character to disambiguate otherwise-identical map names.",
+    },
+    {
+      key: "splitMapFlag",
+      label: "Split Map",
+      type: "select",
+      group: "Map",
+      default: "No",
+      showWhen: eq(v("typeOfMap"), "ITX"),
+      options: [
+        { value: "No", label: "No" },
+        { value: "Yes", label: "Yes" },
+      ],
+      help: 'ITX only. "Yes" produces a SPLITxx destination segment (not valid for DES/FNX).',
+    },
+    {
+      key: "fnxFunctionality",
+      label: "FNX Functionality",
+      type: "text",
+      group: "Map",
+      showWhen: or(eq(v("sourceFormat"), "DES"), eq(v("sourceFormat"), "FNX")),
+      help: "Only for DES/FNX formats. Padded to 12 chars with 'x' in ITX names.",
     },
 
     // ---- Business Process ----
@@ -352,6 +473,144 @@ export const dsvEdiRuleset: Ruleset = {
       group: "Adapter settings",
       help: "Optional message type for the control number; blank gives a GLOBAL control number.",
     },
+
+    // ---- Identities (LW FW) ----
+    {
+      key: "orgNameType",
+      label: "LW FW Identity Organization Name Type",
+      type: "select",
+      group: "Identities",
+      options: [
+        { value: "Customer connection - direct", label: "Customer connection - direct" },
+        {
+          value: "Customer connection - via third party",
+          label: "Customer connection - via third party",
+        },
+        {
+          value: "Third party solution - multiple customers - same identifier",
+          label: "Third party solution - multiple customers - same identifier",
+        },
+        {
+          value: "Third party solution - multiple customers - different identifier",
+          label: "Third party solution - multiple customers - different identifier",
+        },
+      ],
+      help: "Drives the Base Identity Organization Name.",
+    },
+    {
+      key: "partnerName3PP",
+      label: "3rd Party Partner Name",
+      type: "text",
+      group: "Identities",
+      help: "Only used for third-party (3PP/3CC) identity organization names.",
+    },
+
+    // ---- AS2 ----
+    {
+      key: "aS2VANSPartner",
+      label: "AS2 VANS partner",
+      type: "text",
+      group: "AS2",
+      help: "Partner if the customer's files are transferred via a VANS (e.g. TRUECOMMERCE).",
+    },
+    {
+      key: "aS2MessageType1",
+      label: "AS2 message type (profile 1)",
+      type: "text",
+      group: "AS2",
+      help: "Message type when multiple AS2 identifiers exist for the same customer/partner.",
+    },
+    {
+      key: "aS2MessageType2",
+      label: "AS2 message type (profile 2)",
+      type: "text",
+      group: "AS2",
+    },
+    {
+      key: "aS2MessageType3",
+      label: "AS2 message type (profile 3)",
+      type: "text",
+      group: "AS2",
+    },
+    {
+      key: "aS2MessageType4",
+      label: "AS2 message type (profile 4)",
+      type: "text",
+      group: "AS2",
+    },
+    {
+      key: "trustedDigitalCertificate",
+      label: "Trusted Digital Certificate",
+      type: "text",
+      group: "AS2",
+      help: "The partner's trusted digital certificate name (Certificates worksheet).",
+    },
+    {
+      key: "trustedDigitalCertificateTest",
+      label: "Trusted Digital Certificate (TEST)",
+      type: "text",
+      group: "AS2",
+      help: "The partner's trusted digital certificate name for the TEST environment.",
+    },
+
+    // ---- Mailboxes (batch / delay message types) ----
+    {
+      key: "delayMailboxMessageType1",
+      label: "Delay mailbox message type 1",
+      type: "text",
+      group: "Mailboxes",
+    },
+    {
+      key: "delayMailboxMessageType2",
+      label: "Delay mailbox message type 2",
+      type: "text",
+      group: "Mailboxes",
+    },
+    {
+      key: "delayMailboxMessageType3",
+      label: "Delay mailbox message type 3",
+      type: "text",
+      group: "Mailboxes",
+    },
+    {
+      key: "delayMailboxMessageType4",
+      label: "Delay mailbox message type 4",
+      type: "text",
+      group: "Mailboxes",
+    },
+    {
+      key: "batchMailboxMessageType1",
+      label: "Batch mailbox message type 1",
+      type: "text",
+      group: "Mailboxes",
+    },
+    {
+      key: "batchMailboxMessageType2",
+      label: "Batch mailbox message type 2",
+      type: "text",
+      group: "Mailboxes",
+    },
+    {
+      key: "batchMailboxMessageType3",
+      label: "Batch mailbox message type 3",
+      type: "text",
+      group: "Mailboxes",
+    },
+    {
+      key: "batchMailboxMessageType4",
+      label: "Batch mailbox message type 4",
+      type: "text",
+      group: "Mailboxes",
+    },
+    {
+      key: "sourceIdDestinationId",
+      label: "Source ID destination",
+      type: "text",
+      group: "Master data",
+      default: "DSV",
+      help: "Destination ID appended to the Sender/Receiver codes in the Source ID Lookup sheet.",
+    },
+    ...clientFields,
   ],
 
   lookups: {},
@@ -484,50 +743,149 @@ export const dsvEdiRuleset: Ruleset = {
         concat("DSV_BP_", v("bpFunctionName"), "_plugin_bp"),
       ),
     },
-
-    // ---- ITX Maps ----
-    {
-      key: "siMapDescription",
-      label: "SI Map description (for ITX maps)",
-      category: "ITX Maps",
-      when: eq(v("typeOfMap"), "ITX"),
-      note: "Derived from the 2026-07-03 update-doc example; verify token order against VBA.",
-      expr: concat(
-        "DSV_TR_",
-        v("sourceFormat"),
-        "_",
-        upper(v("partnerCode")),
-        "_",
-        upper(v("sourceMsgTypeSi")),
-        "_",
-        v("sourceVersion"),
-        "_",
-        upper(v("destMsgTypeSi")),
-        "_",
-        v("destVersion"),
-        "__mp",
-      ),
-    },
-    {
-      key: "itxMapName",
-      label: "ITX map resource/file name",
-      category: "ITX Maps",
-      when: and(
-        eq(v("typeOfMap"), "ITX"),
-        { kind: "notBlank", key: "sourceMsgTypeItx" },
-      ),
-      note:
-        "PROVISIONAL: the compact 3-char-coded ITX name (e.g. D_TX_EC_...SHP...) " +
-        "requires importing the DropDown message-type code table and confirming the VBA algorithm.",
-      expr: concat(
-        "D_TX_",
-        v("sourceFormat"),
-        "_",
-        upper(v("sourceMsgTypeItx")),
-        v("sourceVersion"),
-        upper(v("destMsgTypeItx")),
-        v("destVersion"),
-      ),
-    },
   ],
 };
+
+/**
+ * The ITX & SI map-name outputs, transcribed from the workbook's VBA
+ * (module that writes the "Resource and file naming" map-name rows). These have
+ * NO cell formula in the workbook (the macro builds them at run time), so the
+ * importer appends them via this factory, passing the actual DropDown lookup ids
+ * (`MessageTypeLookup#2`, `DSVSystemITXLookup#2`).
+ *
+ * Verified against real samples:
+ *   ITX: D_TX_CE_ROMDLZxCSRV1xxINRD96AOR
+ *   SI : DSV_TR_A2A_CAENRCANON_940_4010_824_4010_OUT_RP_mp
+ */
+export function mapNameOutputs(msgTable: string, systemTable: string): OutputDef[] {
+  const fmt = v("sourceFormat");
+  const isDesFnx = or(eq(fmt, "DES"), eq(fmt, "FNX"));
+
+  // IF(LEN(f)>=w, LEFT(UPPER(f),w), UPPER(f)&REPT("x",w-LEN(f)))
+  const pad = (key: string, width: number): Expr =>
+    iff(
+      gt(len(v(key)), String(width - 1)),
+      left(upper(v(key)), String(width)),
+      concat(upper(v(key)), rept("x", arith("-", String(width), len(v(key))))),
+    );
+
+  const sysCode = lookup(systemTable, v("mapSystem"), "Z");
+  const diffChar = iff(notBlank("differenceChar"), upper(v("differenceChar")), "");
+
+  const itxDesFnx = concat(
+    iff(eq(fmt, "DES"), "D_TX_DX_", "D_TX_FX_"),
+    pad("partnerCode", 7),
+    iff(notBlank("fnxFunctionality"), concat("_", pad("fnxFunctionality", 12)), ""),
+    iff(
+      notBlank("mapDirection"),
+      concat("_", left(v("mapDirection"), "1")),
+      "_DIRECTION_IS_MANDATORY",
+    ),
+    sysCode,
+    diffChar,
+  );
+
+  const itxNormal = iff(
+    notBlank("sourceFormat"),
+    concat(
+      "D_TX_",
+      upper(left(fmt, "1")),
+      upper(right(fmt, "1")),
+      "_",
+      pad("partnerCode", 7),
+      lookup(msgTable, v("sourceMsgTypeItx"), "???"),
+      pad("sourceVersion", 4),
+      iff(
+        and(eq(v("splitMapFlag"), "Yes"), isDesFnx),
+        "DO NOT SELECT DES OR FNX FOR SPLIT MAP",
+        iff(
+          eq(v("splitMapFlag"), "Yes"),
+          "SPLITxx",
+          concat(lookup(msgTable, v("destMsgTypeItx"), "???"), pad("destVersion", 4)),
+        ),
+      ),
+      upper(left(v("mapDirection"), "1")),
+      sysCode,
+      diffChar,
+    ),
+    "",
+  );
+
+  const itxMapName: OutputDef = {
+    key: "itxMapName",
+    label: "ITX map resource/file name",
+    category: "ITX Maps",
+    section: "Resource and file naming",
+    when: and(eq(v("typeOfMap"), "ITX"), notBlank("sourceFormat")),
+    note: "Transcribed from the workbook VBA; verified vs. D_TX_CE_ROMDLZxCSRV1xxINRD96AOR.",
+    expr: iff(and(isDesFnx, eq(v("splitMapFlag"), "No")), itxDesFnx, itxNormal),
+  };
+
+  // SI: outer TEXTJOIN("_") of UPPER(inner TEXTJOIN) and a suffix ("mp" normal,
+  // "dox"/"fnx" for DES/FNX). skipBlank drops empty segments (e.g. System="Z").
+  const dirOrMandatory = iff(
+    notBlank("mapDirection"),
+    v("mapDirection"),
+    "DIRECTION_IS_MANDATORY",
+  );
+  const systemUnlessZ = iff(eq(v("mapSystem"), "Z"), "", v("mapSystem"));
+
+  const siDesFnx = join(
+    "_",
+    true,
+    upper(
+      join(
+        "_",
+        true,
+        "DSV_TR",
+        fmt,
+        v("partnerCode"),
+        v("fnxFunctionality"),
+        dirOrMandatory,
+        systemUnlessZ,
+      ),
+    ),
+    iff(eq(fmt, "DES"), "dox", "fnx"),
+  );
+
+  const siNormal = iff(
+    notBlank("sourceFormat"),
+    join(
+      "_",
+      true,
+      upper(
+        join(
+          "_",
+          true,
+          "DSV_TR",
+          fmt,
+          v("partnerCode"),
+          iff(
+            and(eq(v("mapDirection"), "IN"), notBlank("differenceChar")),
+            concat(v("sourceMsgTypeSi"), v("differenceChar")),
+            v("sourceMsgTypeSi"),
+          ),
+          v("sourceVersion"),
+          v("destMsgTypeSi"),
+          v("destVersion"),
+          dirOrMandatory,
+          systemUnlessZ,
+        ),
+      ),
+      "mp",
+    ),
+    "",
+  );
+
+  const siMapDescription: OutputDef = {
+    key: "siMapDescription",
+    label: "SI Map name",
+    category: "ITX Maps",
+    section: "Resource and file naming",
+    when: notBlank("sourceFormat"),
+    note: "Transcribed from the workbook VBA; verified vs. DSV_TR_A2A_CAENRCANON_940_4010_824_4010_OUT_RP_mp.",
+    expr: iff(isDesFnx, siDesFnx, siNormal),
+  };
+
+  return [siMapDescription, itxMapName];
+}

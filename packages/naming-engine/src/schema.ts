@@ -22,6 +22,35 @@ const exprSchema: z.ZodType<Expr> = z.lazy(() =>
       key: exprSchema,
       fallback: exprSchema.optional(),
     }),
+    z.object({
+      kind: z.literal("find"),
+      needle: exprSchema,
+      haystack: exprSchema,
+      fallback: exprSchema.optional(),
+    }),
+    z.object({
+      kind: z.literal("replace"),
+      text: exprSchema,
+      start: exprSchema,
+      count: exprSchema,
+      newText: exprSchema,
+    }),
+    z.object({ kind: z.literal("left"), text: exprSchema, count: exprSchema }),
+    z.object({ kind: z.literal("right"), text: exprSchema, count: exprSchema }),
+    z.object({ kind: z.literal("rept"), text: exprSchema, count: exprSchema }),
+    z.object({ kind: z.literal("len"), value: exprSchema }),
+    z.object({
+      kind: z.literal("arith"),
+      op: z.enum(["+", "-"]),
+      left: exprSchema,
+      right: exprSchema,
+    }),
+    z.object({
+      kind: z.literal("join"),
+      delim: z.string(),
+      skipBlank: z.boolean(),
+      parts: z.array(exprSchema),
+    }),
   ]),
 );
 
@@ -31,6 +60,7 @@ const condSchema: z.ZodType<Cond> = z.lazy(() =>
     z.object({ kind: z.literal("notBlank"), key: z.string() }),
     z.object({ kind: z.literal("eq"), left: exprSchema, right: exprSchema }),
     z.object({ kind: z.literal("neq"), left: exprSchema, right: exprSchema }),
+    z.object({ kind: z.literal("gt"), left: exprSchema, right: exprSchema }),
     z.object({ kind: z.literal("and"), parts: z.array(condSchema) }),
     z.object({ kind: z.literal("or"), parts: z.array(condSchema) }),
     z.object({ kind: z.literal("not"), cond: condSchema }),
@@ -135,6 +165,33 @@ function collectLookupTables(rs: Ruleset): Set<string> {
         walkExpr(e.key);
         if (e.fallback) walkExpr(e.fallback);
         break;
+      case "find":
+        walkExpr(e.needle);
+        walkExpr(e.haystack);
+        if (e.fallback) walkExpr(e.fallback);
+        break;
+      case "replace":
+        walkExpr(e.text);
+        walkExpr(e.start);
+        walkExpr(e.count);
+        walkExpr(e.newText);
+        break;
+      case "left":
+      case "right":
+      case "rept":
+        walkExpr(e.text);
+        walkExpr(e.count);
+        break;
+      case "len":
+        walkExpr(e.value);
+        break;
+      case "arith":
+        walkExpr(e.left);
+        walkExpr(e.right);
+        break;
+      case "join":
+        e.parts.forEach(walkExpr);
+        break;
       default:
         break;
     }
@@ -143,6 +200,7 @@ function collectLookupTables(rs: Ruleset): Set<string> {
     switch (c.kind) {
       case "eq":
       case "neq":
+      case "gt":
         walkExpr(c.left);
         walkExpr(c.right);
         break;

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fieldsForOutputs } from "@dsv/naming-engine";
 import { api, type GenerateResponse, type Ruleset, type VersionMeta } from "./api.js";
 import { NamingForm } from "./components/NamingForm.js";
+import { OutputPicker, sectionOf } from "./components/OutputPicker.js";
 import { Results } from "./components/Results.js";
 import { AdminPanel } from "./components/AdminPanel.js";
 
@@ -23,6 +25,7 @@ export function App() {
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [tab, setTab] = useState<Tab>("generate");
   const [error, setError] = useState<string | null>(null);
+  const [selectedSections, setSelectedSections] = useState<Set<string>>(new Set());
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadActive = useCallback(async () => {
@@ -54,10 +57,36 @@ export function App() {
     }, 150);
   }, [values, ruleset]);
 
-  const visibleKeys = useMemo(
-    () => new Set(result?.visibleFieldKeys ?? ruleset?.fields.map((f) => f.key) ?? []),
-    [result, ruleset],
+  /** Output keys belonging to the sections the user selected. */
+  const selectedOutputKeys = useMemo(() => {
+    if (!ruleset) return new Set<string>();
+    return new Set(
+      ruleset.outputs
+        .filter((o) => selectedSections.has(sectionOf(o)))
+        .map((o) => o.key),
+    );
+  }, [ruleset, selectedSections]);
+
+  /** Fields those selected outputs actually depend on (derived from the AST). */
+  const requiredFieldKeys = useMemo(
+    () => (ruleset ? fieldsForOutputs(ruleset, selectedOutputKeys) : new Set<string>()),
+    [ruleset, selectedOutputKeys],
   );
+
+  /** Shown inputs = required-by-outputs ∩ currently-applicable (showWhen). */
+  const visibleKeys = useMemo(() => {
+    const applicable = result?.visibleFieldKeys ?? ruleset?.fields.map((f) => f.key) ?? [];
+    return new Set(applicable.filter((k) => requiredFieldKeys.has(k)));
+  }, [result, ruleset, requiredFieldKeys]);
+
+  /** Results limited to the selected sections. */
+  const filteredResult = useMemo<GenerateResponse | null>(() => {
+    if (!result) return null;
+    return {
+      ...result,
+      names: result.names.filter((n) => selectedOutputKeys.has(n.key)),
+    };
+  }, [result, selectedOutputKeys]);
 
   const setValue = (key: string, val: string) =>
     setValues((prev) => ({ ...prev, [key]: val }));
@@ -103,16 +132,27 @@ export function App() {
         <main className="grid">
           <section className="panel">
             <h2>Inputs</h2>
-            <NamingForm
+            <OutputPicker
               ruleset={ruleset}
-              values={values}
-              visibleKeys={visibleKeys}
-              onChange={setValue}
+              selected={selectedSections}
+              onChange={setSelectedSections}
             />
+            {visibleKeys.size === 0 ? (
+              <p className="muted">
+                Select what you want to name above to reveal only the inputs you need.
+              </p>
+            ) : (
+              <NamingForm
+                ruleset={ruleset}
+                values={values}
+                visibleKeys={visibleKeys}
+                onChange={setValue}
+              />
+            )}
           </section>
           <section className="panel">
             <h2>Generated names</h2>
-            <Results result={result} />
+            <Results result={filteredResult} />
           </section>
         </main>
       )}

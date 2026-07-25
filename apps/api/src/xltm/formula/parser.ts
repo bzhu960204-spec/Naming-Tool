@@ -6,10 +6,11 @@ import { camel } from "../text.js";
 /**
  * Recursive-descent compiler from the Excel formula subset used by the DSV
  * workbook (CONCATENATE / CONCAT / IF / ISBLANK / OR / AND / NOT / UPPER / LOWER
- * / TRIM / & / = / <> / VLOOKUP / IFNA / IFERROR) into the engine's Expr/Cond
- * model. Defined-name and VLOOKUP-table resolution is delegated to an injected
- * ResolveContext so this compiler stays domain-independent; anything outside the
- * subset throws UnsupportedError so the caller can report it as a warning.
+ * / TRIM / CHAR / LEFT / LEN / FIND / REPLACE / VLOOKUP / IFNA / IFERROR /
+ * & / + / - / = / <> / >) into the engine's Expr/Cond model. Defined-name and
+ * VLOOKUP-table resolution is delegated to an injected ResolveContext so this
+ * compiler stays domain-independent; anything outside the subset throws
+ * UnsupportedError so the caller can report it as a warning.
  */
 
 export interface CompileOptions {
@@ -61,11 +62,22 @@ class Parser {
   }
 
   private parseValue(): Expr {
-    let left = this.parsePrimary();
+    let left = this.parseAdditive();
     while (this.isOp("&")) {
       this.next();
-      const right = this.parsePrimary();
+      const right = this.parseAdditive();
       left = { kind: "concat", parts: flat(left).concat(flat(right)) };
+    }
+    return left;
+  }
+
+  /** Numeric +/- (used for LEFT truncation lengths like 64-(8+LEN(x))). */
+  private parseAdditive(): Expr {
+    let left = this.parsePrimary();
+    while (this.isOp("+") || this.isOp("-")) {
+      const op = this.next().v as "+" | "-";
+      const right = this.parsePrimary();
+      left = { kind: "arith", op, left, right };
     }
     return left;
   }
@@ -124,6 +136,15 @@ class Parser {
         this.expectOp(")");
         return v;
       }
+      case "CHAR": {
+        // CHAR(n) — always a numeric literal in this workbook (10 = newline,
+        // 9 = tab, 34 = quote). Fold to the literal character at compile time.
+        const arg = this.parseValue();
+        this.expectOp(")");
+        if (typeof arg === "string" && /^\d+$/.test(arg))
+          return String.fromCodePoint(Number(arg));
+        throw new UnsupportedError("CHAR expects a numeric literal");
+      }
       case "VLOOKUP": {
         const key = this.parseValue();
         this.expectOp(",");
@@ -146,11 +167,48 @@ class Parser {
         this.expectOp(",");
         const alt = this.parseValue();
         this.expectOp(")");
-        // The engine has no error concept; when wrapping a lookup use the second
-        // argument as the lookup fallback, otherwise keep the primary value.
-        if (typeof primary === "object" && primary.kind === "lookup")
+        // The engine has no error concept; when wrapping a lookup or FIND use the
+        // second argument as the fallback, otherwise keep the primary value.
+        if (
+          typeof primary === "object" &&
+          (primary.kind === "lookup" || primary.kind === "find")
+        )
           return { ...primary, fallback: alt };
         return primary;
+      }
+      case "FIND": {
+        // FIND(needle, haystack, [start]) — 1-based position. The optional start
+        // argument is not used by this workbook, so it is parsed and ignored.
+        const needle = this.parseValue();
+        this.expectOp(",");
+        const haystack = this.parseValue();
+        if (this.consumeOp(",")) this.parseValue();
+        this.expectOp(")");
+        return { kind: "find", needle, haystack };
+      }
+      case "REPLACE": {
+        // REPLACE(text, start, count, newText).
+        const text = this.parseValue();
+        this.expectOp(",");
+        const start = this.parseValue();
+        this.expectOp(",");
+        const count = this.parseValue();
+        this.expectOp(",");
+        const newText = this.parseValue();
+        this.expectOp(")");
+        return { kind: "replace", text, start, count, newText };
+      }
+      case "LEFT": {
+        const text = this.parseValue();
+        this.expectOp(",");
+        const count = this.parseValue();
+        this.expectOp(")");
+        return { kind: "left", text, count };
+      }
+      case "LEN": {
+        const value = this.parseValue();
+        this.expectOp(")");
+        return { kind: "len", value };
       }
       default:
         throw new UnsupportedError(`Unsupported function ${fn}`);
@@ -214,6 +272,11 @@ class Parser {
       return op === "="
         ? { kind: "eq", left, right }
         : { kind: "neq", left, right };
+    }
+    if (this.isOp(">")) {
+      this.next();
+      const right = this.parseValue();
+      return { kind: "gt", left, right };
     }
     throw new UnsupportedError("Unsupported boolean expression");
   }

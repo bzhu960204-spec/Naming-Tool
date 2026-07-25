@@ -1,4 +1,4 @@
-import { dsvEdiRuleset } from "@dsv/naming-engine";
+import { dsvEdiRuleset, mapNameOutputs } from "@dsv/naming-engine";
 import type { OutputDef, Ruleset } from "@dsv/naming-engine";
 import { Workbook } from "../ooxml/workbook.js";
 import { rowOf } from "../ooxml/xml.js";
@@ -113,6 +113,10 @@ export function parseXltmToRuleset(
   outputs.push(...gated.outputs);
   warnings.push(...gated.warnings);
 
+  // ITX & SI map names have no cell formula (the VBA builds them at run time),
+  // so append them from the transcribed algorithm, wired to the real lookup ids.
+  appendMapNameOutputs(outputs, usedKeys, resolveLookupTable, warnings);
+
   const ruleset: Ruleset = {
     id: dsvEdiRuleset.id,
     name: dsvEdiRuleset.name,
@@ -124,4 +128,26 @@ export function parseXltmToRuleset(
   };
 
   return { ruleset, warnings, compiledCount: outputs.length };
+}
+
+/** Append the transcribed ITX/SI map-name outputs, resolving their lookup ids. */
+function appendMapNameOutputs(
+  outputs: OutputDef[],
+  usedKeys: Set<string>,
+  resolveLookupTable: (name: string, col: number) => string | null,
+  warnings: string[],
+): void {
+  const msgTable = resolveLookupTable("MessageTypeLookup", 2);
+  const sysTable = resolveLookupTable("DSVSystemITXLookup", 2);
+  if (!msgTable || !sysTable) {
+    warnings.push(
+      "Map-name lookups (MessageTypeLookup / DSVSystemITXLookup) not found; ITX/SI map names skipped.",
+    );
+    return;
+  }
+  for (const o of mapNameOutputs(msgTable, sysTable)) {
+    if (usedKeys.has(o.key)) continue;
+    usedKeys.add(o.key);
+    outputs.push(o);
+  }
 }

@@ -10,28 +10,66 @@
 
 # DSV EDI Naming Tool — project state (for new sessions)
 
-## >>> SESSION HANDOFF — START HERE (updated 2026-07-21) <<<
+## >>> SESSION HANDOFF — START HERE (updated 2026-07-25) <<<
 Big goal: make the importer reproduce ALL 24 sheets of the .xltm (was only "Resource and file naming").
-Phased plan: P0 refactor(DONE) -> P1 infra(DONE) -> P2 gated sheets(DONE) -> **P3 = NEXT** -> P4 finish.
-DONE so far: structural-diff fix (seed from real .xltm), BP outputs importer, P0 file split, P1
-  injectable resolver + DropDown lookups + VLOOKUP/defined-names, P2 7 gated sheets + computed-name
-  inlining. See detailed sections below (esp. "DONE 2026-07-21 P2").
-Current state: active seed = 101 outputs (each tagged with `section`=source sheet) + 6 lookup tables + 35
-  fields; re-upload v63 = data-only 0/0/0; 17 tests pass; typecheck green. Results UI groups by section
+Phased plan: P0 refactor(DONE) -> P1 infra(DONE) -> P2 gated sheets(DONE) -> P3 big sheets(DONE) ->
+  **P4 = DONE (P4b + P4c done; P4a not feasible)** -> finish.
+DONE so far: structural-diff fix, BP outputs importer, P0 file split, P1 injectable resolver + DropDown
+  lookups + VLOOKUP/defined-names, P2 7 gated sheets + computed-name inlining, P3 six more sheets
+  (User accounts, Identities, AS2, Mailboxes, HTTP(S)/FTP/SFTP Client). See "DONE 2026-07-25 P3" below.
+Current state: active seed = 752 outputs (each tagged `section`) + 6 lookup tables + 92 fields;
+  re-upload v63 = data-only 0/0/0; 22 tests pass; typecheck green. Results UI groups by section
   (collapsible) + hide-empty toggle. Importer lives in apps/api/src/xltm/ (ooxml/ formula/ domain/ + index.ts).
-START P3 by reading "DONE ... P2" + the P3 list in "BIG PLAN" (AS2/Mailboxes/FTP/SFTP/User accounts/
-  Identities/HTTP client). P2 already made cross-sheet COMPUTED defined names work via resolver inlining,
-  so P3 mostly needs per-sheet input fields + specs; multi-profile (FTP/SFTP have profile1/2 +Test cols)
-  and Identities VLOOKUP key cell need care.
+P3 added compiler support for CHAR/LEFT/LEN/FIND/REPLACE/`+`/`-`/`>` and engine Expr kinds
+  find/replace/left/len/arith + Cond kind gt. **When adding any new Expr/Cond kind you MUST update
+  packages/naming-engine/src/schema.ts (zod union AND collectLookupTables walker) too, else the import
+  route rejects "Compiled ruleset is invalid" (seed path skips zod; import path validates).**
+START P4: Master data as dynamic field source, Source ID lookup, ITX/SI compact 3-char map name (needs
+  the DropDown code table + VBA algorithm confirmed). Optional UX: hide the many constant "" config rows.
+P4 STATUS (2026-07-25): active seed now = 754 outputs / 93 fields (re-upload v63 = data-only 0/0/0).
+  - P4b DONE: imported "Source ID lookup" C2/C3 = CONCATENATE(ResolvedPartnerId,"_",E3), E3="DSV".
+    New field sourceIdDestinationId (default "DSV"). Sender/Receiver Code = partnerId_DSV.
+  - P4a SKIP (not feasible): Map1*/Map2*/CodeList* defined names are #REF! (macro-rebuilt). Existing
+    hand-authored single-map fields already cover it.
+  - P4c DONE (recovered from VBA, 2026-07-25): the map-name rows are NOT cell formulas — the macro WRITES
+    Excel formulas into "Resource and file naming" B/C cells at run time. Extracted xl/vbaProject.bin
+    (CFB/OLE parse + MS-OVBA decompress) and transcribed those formulas into engine exprs. Added engine
+    primitives right/rept/join(TEXTJOIN skipBlank) + builders; added 5 fields (mapDirection, mapSystem,
+    differenceChar, splitMapFlag, fnxFunctionality); mapNameOutputs(msgTable,systemTable) factory in
+    dsv-edi.ts (removed old provisional outputs), appended in build-ruleset.ts via appendMapNameOutputs()
+    resolving MessageTypeLookup#2 + DSVSystemITXLookup#2. active=756 outputs/98 fields, re-upload data-only
+    0/0/0, 26 tests. Samples reproduced EXACTLY: ITX D_TX_CE_ROMDLZxCSRV1xxINRD96AOR,
+    SI DSV_TR_A2A_CAENRCANON_940_4010_824_4010_OUT_RP_mp; server ORDERS/INVOIC -> D_TX_CE_ROMDLZxORDV1xxFIVD96AOR.
 GOTCHAS: (a) after ANY importer change, must re-seed: kill API+tsx, delete apps/api/data/naming.db*,
   restart `cd apps/api; node --import tsx src/index.ts` (async). Else active(old) vs reupload(new)=structural.
-  ** When killing node, FILTER TIGHTLY: match CommandLine '*Naming Tool*src\index.ts*' only. A broad
-  'vite' filter KILLED vite dev servers of OTHER projects (Project Management/Evolve/Youtuber). Don't. **
+  ** When killing node, FILTER TIGHTLY: match CommandLine '*tsx src/index.ts*' only. A broad 'vite'
+  filter KILLED vite dev servers of OTHER projects. Also: delete naming.db* FROM REPO ROOT (a stray cwd
+  inside apps/api makes the relative path wrong and the delete silently no-ops). Verify Test-Path=False. **
   (b) run_in_terminal sometimes disabled — if so use get_errors + edits, ask user to run cmds.
-  (c) PS 5.1: no -Form on Invoke-RestMethod; use curl.exe -F for multipart. RUN curl FROM REPO ROOT
-  (Set-Location "C:\Users\BOBZHU01\Projects\Naming Tool") — a stray `cd ../..` broke the @file path.
+  (c) PS 5.1: no -Form on Invoke-RestMethod; use curl.exe -F for multipart. RUN curl FROM REPO ROOT.
   (d) files kept <~280 lines. (e) temp inspect scripts: create apps/api/src/xltm/_dump.ts / _verify.ts,
   run with `node --import tsx ...`, DELETE when done.
+
+## DONE 2026-07-25 P3: six more sheets (752 outputs, 92 fields, 22 tests)
+Sub-phases: P3.1 = User accounts / Identities / AS2 / Mailboxes (only needed CHAR() + per-column label
+cols). P3.2 = HTTP(S) / FTP / SFTP Client (needed new engine primitives).
+- formula/tokenizer.ts: now emits `-` as an op (was Unexpected character).
+- formula/parser.ts: added CHAR (folds to literal char), LEFT, LEN, FIND, REPLACE; parseAdditive layer
+  for `+`/`-`; numeric `>` in parseCondPrimary -> {kind:gt}; IFERROR/IFNA sets fallback on find too.
+- packages/naming-engine types.ts/expr.ts: Expr kinds find/replace/left/len/arith(+/-); Cond kind gt.
+- packages/naming-engine schema.ts: SAME kinds added to zod exprSchema/condSchema + collectLookupTables.
+- domain/sheet-specs.ts: SheetSpec + `labelColsByCol` (Mailboxes col I labels in H); colLabels now only
+  suffixes the cols listed. New specs: User accounts(D), Identities(B, cellRefs B1->orgNameType),
+  AS2(D/E rows18-257), Mailboxes(D + I "History"), HTTP main(D/E)+rename(A/B row36), FTP(D/E), SFTP(D/E).
+- domain/generic-sheet.ts: extracted emitCell(); per-col label via labelColsByCol.
+- rulesets/dsv-edi.ts: added orgNameType(select)/partnerName3PP, aS2VANSPartner/aS2MessageType1-4/
+  trustedDigitalCertificate[/Test], batch/delayMailboxMessageType1-4, and clientFields[] (~40 HTTP/FTP/
+  SFTP inputs via txt()/bln() helpers). Field key = lowerFirst(definedName).
+VERIFIED names: cus.acme; "ACME - Direct"; ACME_TRUECOMMERCE_ORDERS_AS2;
+  /DSV_ACCOUNTS_mb/DSV_CUSTOMERS_mb/DSV_cus.acme_mb; DSV_user_at_acme.com_edi.acme.com_443_SSL_http
+  (@->_at_ via FIND/REPLACE); DSV_SSH_svc_at_acme.com_..._pf (LEFT/LEN truncation to 64). 0 warnings.
+Skipped: Certificates = static template text (no formulas); FTP/SFTP A/B "rename profile" rows (D-col
+  ProfileName already captured); HTTP A36/B36 rename IS imported (distinct _pf name).
 
 ## What this is
 Rebuild of `AAAAXXXXXXX - DSV EDI Naming Tool v63.xltm` (macro Excel, DSV logistics

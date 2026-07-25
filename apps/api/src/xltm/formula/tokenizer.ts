@@ -41,7 +41,7 @@ export function tokenize(s: string): Tok[] {
       i += 2;
       continue;
     }
-    if ("(),&=<>+".includes(c)) {
+    if ("(),&=<>+-".includes(c)) {
       toks.push({ t: "op", v: c });
       i++;
       continue;

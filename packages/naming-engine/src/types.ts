@@ -19,7 +19,16 @@ export type Expr =
   | { kind: "upper"; value: Expr }
   | { kind: "lower"; value: Expr }
   | { kind: "if"; cond: Cond; then: Expr; else: Expr }
-  | { kind: "lookup"; table: string; key: Expr; fallback?: Expr };
+  | { kind: "lookup"; table: string; key: Expr; fallback?: Expr }
+  | { kind: "find"; needle: Expr; haystack: Expr; fallback?: Expr }
+  | { kind: "replace"; text: Expr; start: Expr; count: Expr; newText: Expr }
+  | { kind: "left"; text: Expr; count: Expr }
+  | { kind: "right"; text: Expr; count: Expr }
+  | { kind: "rept"; text: Expr; count: Expr }
+  | { kind: "len"; value: Expr }
+  | { kind: "arith"; op: "+" | "-"; left: Expr; right: Expr }
+  /** Excel TEXTJOIN(delim, skipBlank, ...parts). */
+  | { kind: "join"; delim: string; skipBlank: boolean; parts: Expr[] };
 
 /** A boolean condition (mirrors Excel IF/OR/AND/ISBLANK). */
 export type Cond =
@@ -27,6 +36,7 @@ export type Cond =
   | { kind: "notBlank"; key: string }
   | { kind: "eq"; left: Expr; right: Expr }
   | { kind: "neq"; left: Expr; right: Expr }
+  | { kind: "gt"; left: Expr; right: Expr }
   | { kind: "and"; parts: Cond[] }
   | { kind: "or"; parts: Cond[] }
   | { kind: "not"; cond: Cond };
