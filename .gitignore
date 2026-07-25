@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
+# Database
+*.db
+*.db-journal
+apps/api/data/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Dev launcher runtime state (dynamic ports)
+.dev-ports.json
+
+# Vite cache
+.vite/
+vite.config.ts.timestamp-*
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.suo
+*.user
+
+# Temp extraction scratch (Excel reverse-engineering)
+.tmp/
+
+# Original source spreadsheets / docs (kept out of the app repo)
+*.xltm
+*.xlsm
+*.xlsx
+*.docx

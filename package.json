@@ -1,0 +1,20 @@
+{
+  "name": "dsv-edi-naming-tool",
+  "private": true,
+  "version": "0.1.0",
+  "description": "DSV EDI Naming Tool — config-driven naming generator (successor to the Excel .xltm)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace @dsv/api",
+    "dev:web": "npm run dev --workspace @dsv/web",
+    "test": "npm run test --workspace @dsv/naming-engine",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
