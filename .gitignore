@@ -46,3 +46,6 @@ Thumbs.db
 *.xlsm
 *.xlsx
 *.docx
+# ...except the canonical source files needed to seed & analyze the app
+!AAAAXXXXXXX - DSV EDI Naming Tool v63.xltm
+!AAAAXXXXXXX - DSV EDI Naming Tool - Instructions re ITX map naming.docx

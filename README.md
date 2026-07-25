@@ -22,6 +22,9 @@ expression tree that mirrors the original Excel formulas (`CONCATENATE` / `IF` /
 Every import is validated, diffed against the active version, stored as an immutable version, and can
 be **activated** or **rolled back**.
 
+> 📖 **Project history & roadmap:** see [docs/PROJECT_HISTORY.md](docs/PROJECT_HISTORY.md) for the
+> phased plan (P0–P4), what's done, and what's next. It travels with the repo, so it's readable on any machine.
+
 ## Architecture
 
 ```
