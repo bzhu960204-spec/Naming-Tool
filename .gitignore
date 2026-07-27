@@ -33,6 +33,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # Editor / OS
+.vscode/
 .DS_Store
 Thumbs.db
 *.suo
